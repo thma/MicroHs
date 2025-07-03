@@ -126,3 +126,13 @@ executable mhs
     hs-source-dirs:    mhs src
     build-depends:     base         >= 0.1 && < 10.0,
 
+library
+  exposed-modules:
+      MicroHs.Exp
+  hs-source-dirs:      mhs src
+  --other-modules: MHSPrelude
+  default-extensions:  ScopedTypeVariables TypeSynonymInstances MultiParamTypeClasses FlexibleInstances FlexibleContexts
+
+  ghc-options:         -Wall -Wno-unrecognised-warning-flags -Wno-x-partial
+                       -fwrite-ide-info -Wno-deprecations
+                       -main-is MicroHs.Main
