@@ -1005,7 +1005,7 @@ withVks vks fun = assertTCMode (>=TCType) $ do
   let
     expect = case tcm of { TCType -> sKind; TCKind -> rSort; _ -> undefined }
     loop r [] = fun (reverse r)
-    loop r (IdKind i mk : iks) = do
+    loop r (IdKind i mk : iks) =
       -- When we have 'forall k (a :: k) . t' the k is a kind.
       -- Instead we have have to write 'forall (k :: Kind) (a :: k) . t' and then
       -- we have to guess that k needs sort checking.

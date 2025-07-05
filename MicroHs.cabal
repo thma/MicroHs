@@ -116,8 +116,7 @@ executable mhs
                        process      >= 1.6 && < 1.10,
                        directory    >= 1.2 && < 1.6,
                        text         >= 2.0 && < 2.5,
-                       array        >= 0.5 && < 0.6,
-                       ghc-internal >= 9.0 && < 10.0,
+                       array        >= 0.5 && < 0.6
 
   if impl(hugs)
     hs-source-dirs:    hugs src
@@ -129,10 +128,53 @@ executable mhs
 library
   exposed-modules:
       MicroHs.Exp
-  hs-source-dirs:      mhs src
-  --other-modules: MHSPrelude
-  default-extensions:  ScopedTypeVariables TypeSynonymInstances MultiParamTypeClasses FlexibleInstances FlexibleContexts
+      MicroHs.ExpPrint
+      MicroHs.Builtin
+      MicroHs.Deriving
+      MicroHs.Desugar
+      MicroHs.EncodeData
+      MicroHs.Expr
+      MicroHs.Fixity
+      MicroHs.Flags
+      MicroHs.Graph
+      MicroHs.Ident
+      MicroHs.IdentMap
+      MicroHs.IntMap
+      MicroHs.IntSet
+      MicroHs.Lex
+      MicroHs.List
+      MicroHs.Names
+      MicroHs.Parse
+      MicroHs.State
+      MicroHs.SymTab
+      MicroHs.TCMonad
+      MicroHs.TypeCheck
+    
+  if impl(ghc)
+    hs-source-dirs:    ghc src
+    build-depends:     base         >= 4.10 && < 4.30,
+                       bytestring   >= 0.5 && < 0.20,
+                       deepseq      >= 1.1 && < 1.8,
+                       filepath     >= 1.1 && < 1.8,
+                       ghc-prim     >= 0.5 && < 0.15,
+                       haskeline    >= 0.8 && < 0.10,
+                       time         >= 1.1 && < 1.20,
+                       process      >= 1.6 && < 1.10,
+                       directory    >= 1.2 && < 1.6,
+                       text         >= 2.0 && < 2.5,
+                       array        >= 0.5 && < 0.6
 
+  if impl(hugs)
+    hs-source-dirs:    hugs src
+
+  if impl(mhs)
+    hs-source-dirs:    mhs src
+    build-depends:     base         >= 0.1 && < 10.0,
+
+  other-modules:       MHSPrelude
+                       Text.ParserComb
+                       Text.PrettyPrint.HughesPJLite
+  default-extensions:  ScopedTypeVariables TypeSynonymInstances MultiParamTypeClasses FlexibleInstances FlexibleContexts
   ghc-options:         -Wall -Wno-unrecognised-warning-flags -Wno-x-partial
                        -fwrite-ide-info -Wno-deprecations
                        -main-is MicroHs.Main
