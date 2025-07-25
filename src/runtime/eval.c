@@ -5677,6 +5677,7 @@ mhs_main(int argc, char **argv)
   run_time += GETTIMEMILLI();
 
 #if WANT_STDIO
+  pp(stdout, prog); /* thma hack: print the reduced graph */
   if (verbose) {
     if (verbose > 1) {
       PRINT("node size=%"PRIheap", heap size bytes=%"PRIheap"\n", (heapoffs_t)NODE_SIZE, heap_size * NODE_SIZE);
