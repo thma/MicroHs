@@ -144,20 +144,9 @@ int mhs_eval_string(MhsContextPtr ctx, const char* expr, size_t len, char** resu
         return -1;
     }
     
-    // Parse the expression
+    // Parse the program from the buffer
     NODEPTR prog;
     prog = parse_top(bf, 0);
-    // int c = getb(bf);
-    // if (c == 'v') {
-    //     // Put back the version character and parse as a complete program
-    //     ungetb(c, bf);
-    //     prog = parse_top(bf, 0);
-    // } else {
-    //     // Put back the character and try to parse as a single expression
-    //     ungetb(c, bf);
-    //     prog = parse(bf);
-    // }
-    
     closeb(bf);
     
     if (!prog) {
@@ -168,15 +157,16 @@ int mhs_eval_string(MhsContextPtr ctx, const char* expr, size_t len, char** resu
         return -1;
     }
     
-    // Clear the stack and evaluate the expression
-    //CLEARSTK();
+    // Clear stack
+    CLEARSTK();
     
     // Evaluate the parsed program
     start_exec(prog);
+    // Flush standard handles in case there is some BFILE buffering
+    flushb((BFILE*)FORPTR(comb_stdout)->payload.string);
+    flushb((BFILE*)FORPTR(comb_stderr)->payload.string);
     gc();                     
-    pp(stdout, prog);
     NODEPTR eval_result = prog;
-    //NODEPTR eval_result = evali(prog);
     
     // Convert result to string
     *result = node_to_string(eval_result, result_len);
