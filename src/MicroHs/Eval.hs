@@ -3,6 +3,8 @@
 module MicroHs.Eval (
     MhsContext,
     withMhsContext,
+    createMhsContext,
+    closeMhsContext,
     evalString,
     MhsError(..)
 ) where
@@ -11,7 +13,7 @@ import Foreign
 import Foreign.C.String
 import Foreign.C.Types
 import Control.Exception
-import qualified Data.ByteString as BS
+import Control.Monad (unless)
 
 -- Opaque context type
 newtype MhsContext = MhsContext (Ptr ())
@@ -40,6 +42,27 @@ foreign import ccall "mhs_get_error"
     c_mhs_get_error :: Ptr () -> IO CString
 
 -- High-level interface
+-- |  Initializes a MicroHs context
+-- This function allocates resources needed for evaluation.
+-- It should be called once before any evaluation and cleaned up with 'closeMhsContext'.
+createMhsContext :: IO MhsContext
+createMhsContext = do
+    ctx_ptr <- c_mhs_init_context
+    if ctx_ptr == nullPtr
+        then throwIO $ MhsInitError "Failed to initialize MicroHs context"
+        else return (MhsContext ctx_ptr)
+
+-- | Cleans up the MicroHs context
+-- This function releases resources allocated by 'createMhsContext'.
+-- It should be called after all evaluations are done.
+closeMhsContext :: MhsContext -> IO ()
+closeMhsContext (MhsContext ctx_ptr) = do
+    unless (ctx_ptr == nullPtr) $ do
+        c_mhs_free_context ctx_ptr        
+
+-- | Runs an action with a MicroHs context
+-- This function initializes a context, runs the action, and cleans up afterwards.
+-- It is useful for one-off evaluations without needing to manage the context manually.
 withMhsContext :: (MhsContext -> IO a) -> IO a
 withMhsContext action = do
     ctx_ptr <- c_mhs_init_context
@@ -49,6 +72,9 @@ withMhsContext action = do
             result <- action (MhsContext ctx_ptr) `finally` c_mhs_free_context ctx_ptr
             return result
 
+-- | Evaluates a MicroHs combinator code program from a string
+-- This function takes a string containing MicroHs combinator code, evaluates it, and returns the result as a string.
+-- If evaluation fails, it throws an 'MhsEvalError'.
 evalString :: MhsContext -> String -> IO String
 evalString (MhsContext ctx) expr = do
     withCStringLen expr $ \(expr_ptr, expr_len) -> do
