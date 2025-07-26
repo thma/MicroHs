@@ -146,20 +146,22 @@ int mhs_eval_string(MhsContextPtr ctx, const char* expr, size_t len, char** resu
     
     // Parse the expression
     NODEPTR prog;
-    int c = getb(bf);
-    if (c == 'v') {
-        // Put back the version character and parse as a complete program
-        ungetb(c, bf);
-        prog = parse_top(bf, 0);
-    } else {
-        // Put back the character and try to parse as a single expression
-        ungetb(c, bf);
-        prog = parse(bf);
-    }
+    prog = parse_top(bf, 0);
+    // int c = getb(bf);
+    // if (c == 'v') {
+    //     // Put back the version character and parse as a complete program
+    //     ungetb(c, bf);
+    //     prog = parse_top(bf, 0);
+    // } else {
+    //     // Put back the character and try to parse as a single expression
+    //     ungetb(c, bf);
+    //     prog = parse(bf);
+    // }
     
     closeb(bf);
     
     if (!prog) {
+        fprintf(stderr, "Failed to parse expression: %s\n", ctx->error_msg);
         strcpy(ctx->error_msg, "Failed to parse expression");
         ctx->error_occurred = 1;
         current_ctx = NULL;
@@ -167,10 +169,14 @@ int mhs_eval_string(MhsContextPtr ctx, const char* expr, size_t len, char** resu
     }
     
     // Clear the stack and evaluate the expression
-    CLEARSTK();
+    //CLEARSTK();
     
     // Evaluate the parsed program
-    NODEPTR eval_result = evali(prog);
+    start_exec(prog);
+    gc();                     
+    pp(stdout, prog);
+    NODEPTR eval_result = prog;
+    //NODEPTR eval_result = evali(prog);
     
     // Convert result to string
     *result = node_to_string(eval_result, result_len);
