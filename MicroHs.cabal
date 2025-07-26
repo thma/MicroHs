@@ -126,17 +126,17 @@ executable mhs
     hs-source-dirs:    mhs src
     build-depends:     base         >= 0.1 && < 10.0,
 
-library mhseval-lib
-  exposed-modules:    MicroHs.Eval
-  build-depends:      base >=4.7 && <5,
-                      bytestring
-  hs-source-dirs:     src
-  default-language:   Haskell2010
-  include-dirs:       src/runtime src/runtime/unix
-  install-includes:   mhseval.h
-  c-sources:          src/runtime/mhseval.c 
-  cc-options:         -DWANT_STDIO=1 -DWANT_FLOAT=1
-  includes:           mhseval.h
+-- library mhseval-lib
+--   exposed-modules:    MicroHs.Eval
+--   build-depends:      base >=4.7 && <5,
+--                       bytestring
+--   hs-source-dirs:     src
+--   default-language:   Haskell2010
+--   include-dirs:       src/runtime src/runtime/unix
+--   install-includes:   mhseval.h
+--   c-sources:          src/runtime/mhseval.c 
+--   cc-options:         -DWANT_STDIO=1 -DWANT_FLOAT=1
+--   includes:           mhseval.h
 
 library
   default-language:    Haskell2010
@@ -155,6 +155,7 @@ library
                         MicroHs.Exp 
                         MicroHs.ExpPrint 
                         MicroHs.Expr 
+                        MicroHs.Eval
                         MicroHs.FFI 
                         MicroHs.Fixity 
                         MicroHs.Flags 
@@ -190,6 +191,11 @@ library
                         System.IO.MD5
                         System.IO.Serialize
                         System.IO.TimeMilli
+  include-dirs:       src/runtime src/runtime/unix
+  install-includes:   mhseval.h
+  c-sources:          src/runtime/mhseval.c 
+  cc-options:         -DWANT_STDIO=1 -DWANT_FLOAT=1
+  includes:           mhseval.h
   if impl(ghc)
     hs-source-dirs:     ghc src
     build-depends:      base         >= 4.10 && < 4.30,
