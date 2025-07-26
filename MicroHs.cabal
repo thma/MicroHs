@@ -181,8 +181,8 @@ library
                         System.IO.TimeMilli
   include-dirs:       src/runtime src/runtime/unix
   install-includes:   mhseval.h
-  c-sources:          src/runtime/mhseval.c 
-  cc-options:         -DWANT_STDIO=1 -DWANT_FLOAT=1
+  c-sources:          src/runtime/mhseval.c
+  cc-options:         -DWANT_FLOAT=1
   includes:           mhseval.h
   if impl(ghc)
     hs-source-dirs:     ghc src

@@ -96,6 +96,7 @@ void mhs_free_context(MhsContextPtr ctx) {
 
 // Convert a MicroHs node to a C string representation
 static char* node_to_string(NODEPTR node, size_t* len) {
+    if (!node || !len) return NULL;
     // Open a write buffer
     BFILE *bf = openb_wr_buf();
     if (!bf) return NULL;
