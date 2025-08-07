@@ -8,6 +8,14 @@
 #define WANT_GMP 0
 #endif /* defined(WANT_GMP) */
 
+#if !defined(WANT_JIT)
+#define WANT_JIT 0
+#endif /* defined(WANT_JIT) */
+
+#if WANT_JIT
+#include "jit.h"
+#endif /* WANT_JIT */
+
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -930,6 +938,131 @@ struct ioarray *argarray;
 
 int verbose = 0;
 int gcbell = 0;
+
+/* Profiling infrastructure */
+int enable_profiling = 0;
+counter_t combinator_counts[T_LAST_TAG + 1] = {0};
+typedef struct {
+  enum node_tag first;
+  enum node_tag second;
+  counter_t count;
+} combinator_bigram;
+#define MAX_BIGRAMS 1000
+static combinator_bigram bigram_table[MAX_BIGRAMS];
+static int num_bigrams = 0;
+static enum node_tag last_combinator = T_FREE;
+
+/* Profiling helper functions */
+static void record_combinator(enum node_tag tag);
+static void record_bigram(enum node_tag first, enum node_tag second);
+static void write_profile_data(void);
+
+/* Record combinator execution and bigram patterns */
+static void record_combinator(enum node_tag tag) {
+#if WANT_JIT
+  /* Always count for JIT compilation decisions when JIT is enabled */
+  if (enable_jit || enable_profiling) {
+    combinator_counts[tag]++;
+  }
+  if (!enable_profiling) return;
+#else
+  if (!enable_profiling) return;
+  
+  /* Count combinator execution */
+  combinator_counts[tag]++;
+#endif
+  
+  /* Track bigram patterns */
+  if (last_combinator != T_FREE) {
+    record_bigram(last_combinator, tag);
+  }
+  last_combinator = tag;
+}
+
+/* Record bigram (two consecutive combinator) patterns */
+static void record_bigram(enum node_tag first, enum node_tag second) {
+  /* Search for existing bigram */
+  for (int i = 0; i < num_bigrams; i++) {
+    if (bigram_table[i].first == first && bigram_table[i].second == second) {
+      bigram_table[i].count++;
+      return;
+    }
+  }
+  
+  /* Add new bigram if space available */
+  if (num_bigrams < MAX_BIGRAMS) {
+    bigram_table[num_bigrams].first = first;
+    bigram_table[num_bigrams].second = second;
+    bigram_table[num_bigrams].count = 1;
+    num_bigrams++;
+  }
+}
+
+/* Write profiling data to a machine and human readable format */
+static void write_profile_data(void) {
+  if (!enable_profiling) return;
+  
+#if WANT_STDIO
+  FILE *fp = fopen("mhs-profile.txt", "w");
+  if (!fp) {
+    PRINT("Warning: Could not write profiling data to mhs-profile.txt\n");
+    return;
+  }
+  
+  /* Write header */
+  fprintf(fp, "# MicroHs Runtime Profiling Data\n");
+  fprintf(fp, "# Format: COMBINATOR_COUNTS and BIGRAM_PATTERNS\n\n");
+  
+  /* Write combinator execution counts */
+  fprintf(fp, "COMBINATOR_COUNTS:\n");
+  for (enum node_tag t = T_FREE; t <= T_LAST_TAG; t++) {
+    if (combinator_counts[t] > 0) {
+#if WANT_TAGNAMES
+      const char* name = (tag_names[t] != NULL) ? tag_names[t] : "UNKNOWN";
+#else
+      char name_buf[32];
+      snprintf(name_buf, sizeof(name_buf), "TAG_%d", (int)t);
+      const char* name = name_buf;
+#endif
+      fprintf(fp, "%s: %"PRIcounter"\n", name, combinator_counts[t]);
+    }
+  }
+  
+  /* Write bigram patterns sorted by frequency */
+  fprintf(fp, "\nBIGRAM_PATTERNS:\n");
+  /* Simple selection sort for readability */
+  for (int i = 0; i < num_bigrams; i++) {
+    int max_idx = i;
+    for (int j = i + 1; j < num_bigrams; j++) {
+      if (bigram_table[j].count > bigram_table[max_idx].count) {
+        max_idx = j;
+      }
+    }
+    if (max_idx != i) {
+      combinator_bigram temp = bigram_table[i];
+      bigram_table[i] = bigram_table[max_idx];
+      bigram_table[max_idx] = temp;
+    }
+    
+#if WANT_TAGNAMES
+    const char* first_name = (tag_names[bigram_table[i].first] != NULL) ?
+                            tag_names[bigram_table[i].first] : "UNKNOWN";
+    const char* second_name = (tag_names[bigram_table[i].second] != NULL) ?
+                             tag_names[bigram_table[i].second] : "UNKNOWN";
+#else
+    char first_buf[32], second_buf[32];
+    snprintf(first_buf, sizeof(first_buf), "TAG_%d", (int)bigram_table[i].first);
+    snprintf(second_buf, sizeof(second_buf), "TAG_%d", (int)bigram_table[i].second);
+    const char* first_name = first_buf;
+    const char* second_name = second_buf;
+#endif
+    fprintf(fp, "%s -> %s: %"PRIcounter"\n", first_name, second_name, bigram_table[i].count);
+  }
+  
+  fclose(fp);
+  PRINT("Profiling data written to mhs-profile.txt\n");
+#endif /* WANT_STDIO */
+}
 
 
 #if WANT_SIGINT
@@ -4594,6 +4727,45 @@ evali(NODEPTR an)
   // printf("%s %d\n", tag_names[tag], (int)stack_ptr);
   //if (stack_ptr < -1)
   //  ERR("stack_ptr");
+  
+  /* Record profiling data for combinator execution */
+  record_combinator(tag);
+  
+#if WANT_JIT
+  /* Check for JIT compilation */
+  if (enable_jit) {
+    if (jit_should_compile(tag)) {
+      void* jit_code = jit_compile_combinator(tag);
+      if (jit_code) {
+        NODEPTR result = jit_execute(n, jit_code, stack, stack_ptr - stk);
+        if (result) {
+          n = result;
+          /* Adjust stack pointer based on combinator */
+          if (tag == T_I) {
+            POP(1);  /* I consumes 1 argument */
+          } else if (tag == T_K || tag == T_A) {
+            POP(2);  /* K and A consume 2 arguments */
+          }
+          goto top;  /* Continue evaluation with result */
+        }
+      }
+    } else if (global_jit_ctx && global_jit_ctx->code_cache[tag]) {
+      /* Already compiled, execute JIT code */
+      NODEPTR result = jit_execute(n, global_jit_ctx->code_cache[tag], stack, stack_ptr - stk);
+      if (result) {
+        n = result;
+        /* Adjust stack pointer based on combinator */
+        if (tag == T_I) {
+          POP(1);  /* I consumes 1 argument */
+        } else if (tag == T_K || tag == T_A) {
+          POP(2);  /* K and A consume 2 arguments */
+        }
+        goto top;  /* Continue evaluation with result */
+      }
+    }
+  }
+#endif /* WANT_JIT */
+  
   switch (tag) {
   ap2:         PUSH(n); n = FUN(n);
   ap:
@@ -6169,6 +6341,15 @@ mhs_init_args(
       } else {
         if (strcmp(p, "-v") == 0)
           verbose++;
+        else if (strcmp(p, "-profile") == 0)
+          enable_profiling = 1;
+#if WANT_JIT
+        else if (strcmp(p, "-jit") == 0) {
+          enable_jit = 1;
+        } else if (strncmp(p, "-jit-threshold=", 15) == 0) {
+          jit_threshold = (size_t)atol(p + 15);
+        }
+#endif /* WANT_JIT */
 #if WANT_TICK
         else if (strcmp(p, "-T") == 0)
           dump_ticks = 1;
@@ -6186,7 +6367,11 @@ mhs_init_args(
           gcbell++;
 #endif  /* WANT_STDIO */
         else
-          ERR("Usage: eval [+RTS [-v] [-B] [-T] [-Hheap-size] [-Kstack-size] [-rFILE] [-oFILE] -RTS] arg ...");
+#if WANT_JIT
+          ERR("Usage: eval [+RTS [-v] [-profile] [-jit] [-jit-threshold=N] [-B] [-T] [-Hheap-size] [-Kstack-size] [-rFILE] [-oFILE] -RTS] arg ...");
+#else
+          ERR("Usage: eval [+RTS [-v] [-profile] [-B] [-T] [-Hheap-size] [-Kstack-size] [-rFILE] [-oFILE] -RTS] arg ...");
+#endif
       }
     } else {
       if (strcmp(p, "+RTS") == 0) {
@@ -6206,6 +6391,18 @@ mhs_init_args(
   stack = mmalloc(sizeof(NODEPTR) * stack_size);
   CLEARSTK();
   init_stableptr();
+
+#if WANT_JIT
+  /* Initialize JIT if enabled */
+  if (enable_jit) {
+    if (!jit_init()) {
+      fprintf(stderr, "JIT: Failed to initialize\n");
+      enable_jit = 0;  /* Disable JIT on failure */
+    } else if (verbose > 0) {
+      fprintf(stderr, "JIT: Enabled with threshold %zu\n", jit_threshold);
+    }
+  }
+#endif /* WANT_JIT */
 
   num_reductions = 0;
 
@@ -6299,6 +6496,18 @@ mhs_main(int argc, char **argv)
 #endif
   run_time -= GETTIMEMILLI();
 
+#if WANT_JIT
+  /* Initialize JIT if enabled */
+  if (enable_jit) {
+    if (!jit_init()) {
+      fprintf(stderr, "Warning: JIT initialization failed, continuing without JIT\n");
+      enable_jit = 0;
+    } else if (verbose) {
+      fprintf(stderr, "JIT: Enabled with threshold %zu\n", jit_threshold);
+    }
+  }
+#endif /* WANT_JIT */
+
 #if 0
   topnode = &prog;
 #endif
@@ -6364,6 +6573,17 @@ mhs_main(int argc, char **argv)
 #ifdef TEARDOWN
   main_teardown(); /* do some platform specific teardown */
 #endif
+
+  /* Write profiling data if enabled */
+  write_profile_data();
+
+#if WANT_JIT
+  /* Shutdown JIT if it was initialized */
+  if (enable_jit) {
+    jit_shutdown();
+  }
+#endif /* WANT_JIT */
+
   EXIT(0);
 }
 

@@ -16,11 +16,25 @@ RTS=src/runtime
 RTSINC=-I$(RTS) -I$(RTS)/$(CONF)
 MAINC= $(RTS)/main.c
 #
+# JIT compiler configuration (optional)
+WANT_JIT ?= 0
+JIT_THRESHOLD ?= 10000
+MIR_SRC = $(RTS)/mir/mir.c $(RTS)/mir/mir-gen.c
+MIR_FLAGS = -DMIR_PARALLEL_GEN=0 -DMIR_NO_SCAN=1
+#
 CCWARNS= -Wall
 CCOPTS= -O3
 CCLIBS= -lm $(MHSGMPCCLIBS)
 CCSANITIZE= -fsanitize=undefined -fsanitize=address -fsanitize=pointer-compare -fsanitize=pointer-subtract
-CCEVAL= $(CC) $(CCWARNS) $(CCOPTS) $(MHSGMPCCFLAGS) $(RTSINC) $(MAINC) $(RTS)/eval.c
+
+# Conditional JIT compilation
+ifeq ($(WANT_JIT),1)
+  JIT_SRC = $(MIR_SRC) $(RTS)/jit.c
+  JIT_FLAGS = $(MIR_FLAGS) -DWANT_JIT=1 -DJIT_THRESHOLD=$(JIT_THRESHOLD) -I$(RTS)/mir
+  CCEVAL= $(CC) $(CCWARNS) $(CCOPTS) $(MHSGMPCCFLAGS) $(JIT_FLAGS) $(RTSINC) $(MAINC) $(RTS)/eval.c $(JIT_SRC)
+else
+  CCEVAL= $(CC) $(CCWARNS) $(CCOPTS) $(MHSGMPCCFLAGS) $(RTSINC) $(MAINC) $(RTS)/eval.c
+endif
 #
 GHC= ghc
 GHCINCS= -ighc -isrc -ipaths
@@ -49,7 +63,7 @@ MHSINCNP= -i $(MHSGMP) -imhs -isrc -ilib
 MHSINC=$(MHSINCNP) -ipaths 
 MAINMODULE=MicroHs.Main
 #
-.PHONY:	clean bootstrap install ghcgen newmhs newmhsz cachelib timecompile exampletest cachetest runtest runtestmhs everytest everytestmhs nfibtest info install minstall installmsg
+.PHONY:	clean bootstrap install ghcgen newmhs newmhsz cachelib timecompile timecompile-profile exampletest cachetest runtest runtestmhs runtestmhs-profile everytest everytestmhs nfibtest nfibtest-profile analyze-profile info install minstall installmsg
 
 all:	bin/mhs bin/cpphs bin/mcabal
 
@@ -192,6 +206,31 @@ timecompile: bin/mhs
 	@git rev-parse HEAD
 	time bin/mhs +RTS -v -RTS $(MHSINC) $(MAINMODULE)
 
+# Profiling version of timecompile
+timecompile-profile: bin/mhs
+	@date
+	@git rev-parse HEAD
+	@echo "Running with profiling enabled..."
+	time bin/mhs +RTS -v -profile -RTS $(MHSINC) $(MAINMODULE)
+	@echo "Profiling data saved to mhs-profile.txt"
+
+# JIT-enabled version of timecompile
+timecompile-jit: bin/mhs-jit
+	@date
+	@git rev-parse HEAD
+	@echo "Running with JIT enabled..."
+	time bin/mhs-jit +RTS -v -jit -RTS $(MHSINC) $(MAINMODULE)
+
+# Build JIT-enabled mhs
+bin/mhs-jit: $(RTS)/*.c $(RTS)/*.h $(RTS)/*/*.h targets.conf $(RTS)/mir/.git
+	@mkdir -p bin
+	$(MAKE) bin/mhs WANT_JIT=1
+	mv bin/mhs bin/mhs-jit
+
+# Ensure MIR submodule is initialized
+$(RTS)/mir/.git:
+	git submodule update --init src/runtime/mir
+
 #
 timecachecompile: bin/mhs
 	@-rm -f .mhscache
@@ -271,6 +310,37 @@ cachetest:	bin/mhs bin/cpphs bin/mhseval Example.hs
 
 nfibtest: bin/mhs bin/mhseval
 	bin/mhs -itests Nfib && bin/mhseval
+
+# JIT-enabled version of nfibtest
+nfibtest-jit: bin/mhs-jit bin/mhseval-jit
+	bin/mhs-jit -itests Nfib && bin/mhseval-jit +RTS -jit -RTS
+
+# Build JIT-enabled evaluator
+bin/mhseval-jit: $(RTS)/*.c $(RTS)/*.h $(RTS)/*/*.h $(RTS)/mir/.git
+	@mkdir -p bin
+	$(MAKE) bin/mhseval WANT_JIT=1
+	mv bin/mhseval bin/mhseval-jit
+
+# Profiling versions of test commands
+nfibtest-profile: bin/mhs bin/mhseval
+	bin/mhs -itests Nfib && bin/mhseval +RTS -profile -RTS
+	@echo "Profiling data saved to mhs-profile.txt"
+
+runtestmhs-profile: bin/mhs bin/mhseval
+	@echo "Running test suite with profiling..."
+	time $(MAKE) -C tests runtestmhs MHS="../bin/mhs +RTS -profile -RTS"
+	@echo "Profiling data saved to mhs-profile.txt"
+
+# Analyze profiling data
+analyze-profile:
+	@if [ ! -f mhs-profile.txt ]; then \
+		echo "No profiling data found. Run one of the profiling targets first:"; \
+		echo "  make timecompile-profile"; \
+		echo "  make runtestmhs-profile"; \
+		echo "  make nfibtest-profile"; \
+		exit 1; \
+	fi
+	@./tools/profile-analyze.sh
 
 ######
 
