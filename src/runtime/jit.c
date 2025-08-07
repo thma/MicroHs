@@ -26,12 +26,23 @@ counter_t jit_cache_hits = 0;
 counter_t jit_cache_misses = 0;
 
 /* Node tag constants from eval.c - must match exactly */
-enum { T_I = 16, T_K = 14, T_A = 19, T_LAST_TAG = 200 };
+enum { 
+    T_I = 16, T_K = 14, T_A = 19,
+    /* Arithmetic combinators */
+    T_ADD = 34, T_SUB = 35, T_MUL = 36, T_QUOT = 37, T_REM = 38,
+    T_SUBR = 39, T_UQUOT = 40, T_UREM = 41, T_NEG = 42,
+    /* Comparison combinators */
+    T_EQ = 53, T_NE = 54, T_LT = 55, T_LE = 56, T_GT = 57, T_GE = 58,
+    T_LAST_TAG = 200 
+};
 
 /* Forward declarations */
 static void* compile_I_combinator(jit_context_t *ctx);
 static void* compile_K_combinator(jit_context_t *ctx);
 static void* compile_A_combinator(jit_context_t *ctx);
+static void* compile_ADD_combinator(jit_context_t *ctx);
+static void* compile_SUB_combinator(jit_context_t *ctx);
+static void* compile_MUL_combinator(jit_context_t *ctx);
 
 /* Initialize JIT system */
 int jit_init(void) {
@@ -69,9 +80,8 @@ int jit_init(void) {
     global_jit_ctx->compile_threshold = jit_threshold;
     global_jit_ctx->initialized = 1;
     
-    if (verbose > 0) {
-        fprintf(stderr, "JIT: Initialized with threshold %zu\n", jit_threshold);
-    }
+    /* Always show initialization message for debugging */
+    fprintf(stderr, "JIT: Initialized successfully (threshold=%zu)\n", jit_threshold);
     
     return 1;
 }
@@ -82,7 +92,7 @@ void jit_shutdown(void) {
         return;
     }
     
-    if (verbose > 1) {
+    if (jit_compile_count > 0 || enable_jit) {  /* Show stats if JIT was used */
         fprintf(stderr, "JIT Statistics:\n");
         fprintf(stderr, "  Compilations: %llu\n", (unsigned long long)jit_compile_count);
         fprintf(stderr, "  Executions: %llu\n", (unsigned long long)jit_execute_count);
@@ -125,11 +135,16 @@ int jit_should_compile(int tag) {
         return 0;
     }
     
-    /* Only compile supported combinators initially */
+    /* Only compile supported combinators */
     switch (tag) {
     case T_I:
     case T_K:
     case T_A:
+    /* Temporarily disable arithmetic combinators due to MIR issues
+    case T_ADD:
+    case T_SUB:
+    case T_MUL:
+    */
         if (verbose > 1) {
             fprintf(stderr, "JIT: Triggering compilation for tag %d\n", tag);
         }
@@ -208,6 +223,7 @@ static void* compile_I_combinator(jit_context_t *ctx) {
 
 /* Compile K combinator: K x y = x */
 static void* compile_K_combinator(jit_context_t *ctx) {
+    /* Debug: Starting K combinator compilation */
     if (verbose > 2) {
         fprintf(stderr, "JIT: Compiling K combinator\n");
     }
@@ -228,9 +244,9 @@ static void* compile_K_combinator(jit_context_t *ctx) {
     MIR_reg_t stack_ptr_reg = MIR_reg(ctx->mir_ctx, "stack_ptr", func_item->u.func);
     
     /* Create local registers for stack access */
-    MIR_reg_t arg1_ptr = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_P, "arg1_ptr");
-    MIR_reg_t arg1_node = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_P, "arg1_node");
-    MIR_reg_t arg1_val = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_P, "arg1_val");
+    MIR_reg_t arg1_ptr = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg1_ptr");
+    MIR_reg_t arg1_node = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg1_node");
+    MIR_reg_t arg1_val = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg1_val");
     
     /* Check if we have at least 2 arguments on stack */
     MIR_label_t has_args_label = MIR_new_label(ctx->mir_ctx);
@@ -316,6 +332,7 @@ static void* compile_K_combinator(jit_context_t *ctx) {
 
 /* Compile A combinator: A x y = y */
 static void* compile_A_combinator(jit_context_t *ctx) {
+    /* Debug: Starting A combinator compilation */
     if (verbose > 2) {
         fprintf(stderr, "JIT: Compiling A combinator\n");
     }
@@ -336,9 +353,9 @@ static void* compile_A_combinator(jit_context_t *ctx) {
     MIR_reg_t stack_ptr_reg = MIR_reg(ctx->mir_ctx, "stack_ptr", func_item->u.func);
     
     /* Create local registers for stack access */
-    MIR_reg_t arg2_ptr = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_P, "arg2_ptr");
-    MIR_reg_t arg2_node = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_P, "arg2_node");
-    MIR_reg_t arg2_val = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_P, "arg2_val");
+    MIR_reg_t arg2_ptr = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg2_ptr");
+    MIR_reg_t arg2_node = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg2_node");
+    MIR_reg_t arg2_val = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg2_val");
     
     /* Check if we have at least 2 arguments on stack */
     MIR_label_t has_args_label = MIR_new_label(ctx->mir_ctx);
@@ -416,6 +433,444 @@ static void* compile_A_combinator(jit_context_t *ctx) {
     return code;
 }
 
+/* Compile ADD combinator: ADD x y = x + y (both must be integers) */
+static void* compile_ADD_combinator(jit_context_t *ctx) {
+    if (verbose > 2) {
+        fprintf(stderr, "JIT: Compiling ADD combinator\n");
+    }
+    
+    MIR_type_t res_type = MIR_T_P;
+    
+    /* Create function */
+    MIR_item_t func_item = MIR_new_func(ctx->mir_ctx, "ADD_jit", 
+                                        1, &res_type,
+                                        3,
+                                        MIR_T_P, "node",
+                                        MIR_T_P, "stack",
+                                        MIR_T_I64, "stack_ptr");
+    
+    /* Get parameter registers */
+    MIR_reg_t node_reg = MIR_reg(ctx->mir_ctx, "node", func_item->u.func);
+    MIR_reg_t stack_reg = MIR_reg(ctx->mir_ctx, "stack", func_item->u.func);
+    MIR_reg_t stack_ptr_reg = MIR_reg(ctx->mir_ctx, "stack_ptr", func_item->u.func);
+    
+    /* Create local registers */
+    MIR_reg_t arg1_ptr = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg1_ptr");
+    MIR_reg_t arg1_node = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg1_node");
+    MIR_reg_t arg1_val = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg1_val");
+    MIR_reg_t arg2_ptr = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg2_ptr");
+    MIR_reg_t arg2_node = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg2_node");
+    MIR_reg_t arg2_val = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg2_val");
+    MIR_reg_t result_val = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "result_val");
+    
+    /* Check if we have at least 2 arguments on stack */
+    MIR_label_t has_args_label = MIR_new_label(ctx->mir_ctx);
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_BGE,
+            MIR_new_label_op(ctx->mir_ctx, has_args_label),
+            MIR_new_reg_op(ctx->mir_ctx, stack_ptr_reg),
+            MIR_new_int_op(ctx->mir_ctx, 2)));
+    
+    /* Return NULL if not enough arguments */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_ret_insn(ctx->mir_ctx, 1,
+            MIR_new_int_op(ctx->mir_ctx, 0)));
+    
+    /* has_args: */
+    MIR_append_insn(ctx->mir_ctx, func_item, has_args_label);
+    
+    /* Load first argument from stack[stack_ptr-1] */
+    MIR_reg_t offset1 = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "offset1");
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_SUB,
+            MIR_new_reg_op(ctx->mir_ctx, offset1),
+            MIR_new_reg_op(ctx->mir_ctx, stack_ptr_reg),
+            MIR_new_int_op(ctx->mir_ctx, 1)));
+    
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MUL,
+            MIR_new_reg_op(ctx->mir_ctx, offset1),
+            MIR_new_reg_op(ctx->mir_ctx, offset1),
+            MIR_new_int_op(ctx->mir_ctx, sizeof(NODEPTR))));
+    
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_ADD,
+            MIR_new_reg_op(ctx->mir_ctx, arg1_ptr),
+            MIR_new_reg_op(ctx->mir_ctx, stack_reg),
+            MIR_new_reg_op(ctx->mir_ctx, offset1)));
+    
+    /* Load the node pointer and get its integer value */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MOV,
+            MIR_new_reg_op(ctx->mir_ctx, arg1_node),
+            MIR_new_mem_op(ctx->mir_ctx, MIR_T_P, 0,
+                          arg1_ptr, 0, 0)));
+    
+    /* Load integer value from arg1_node->u2.arg (offset 8) */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MOV,
+            MIR_new_reg_op(ctx->mir_ctx, arg1_val),
+            MIR_new_mem_op(ctx->mir_ctx, MIR_T_I64, JIT_OFFSET_ARG,
+                          arg1_node, 0, 0)));
+    
+    /* Load second argument from stack[stack_ptr] */
+    MIR_reg_t offset2 = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "offset2");
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MUL,
+            MIR_new_reg_op(ctx->mir_ctx, offset2),
+            MIR_new_reg_op(ctx->mir_ctx, stack_ptr_reg),
+            MIR_new_int_op(ctx->mir_ctx, sizeof(NODEPTR))));
+    
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_ADD,
+            MIR_new_reg_op(ctx->mir_ctx, arg2_ptr),
+            MIR_new_reg_op(ctx->mir_ctx, stack_reg),
+            MIR_new_reg_op(ctx->mir_ctx, offset2)));
+    
+    /* Load the node pointer and get its integer value */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MOV,
+            MIR_new_reg_op(ctx->mir_ctx, arg2_node),
+            MIR_new_mem_op(ctx->mir_ctx, MIR_T_P, 0,
+                          arg2_ptr, 0, 0)));
+    
+    /* Load integer value from arg2_node->u2.arg (offset 8) */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MOV,
+            MIR_new_reg_op(ctx->mir_ctx, arg2_val),
+            MIR_new_mem_op(ctx->mir_ctx, MIR_T_I64, JIT_OFFSET_ARG,
+                          arg2_node, 0, 0)));
+    
+    /* Perform addition */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_ADD,
+            MIR_new_reg_op(ctx->mir_ctx, result_val),
+            MIR_new_reg_op(ctx->mir_ctx, arg1_val),
+            MIR_new_reg_op(ctx->mir_ctx, arg2_val)));
+    
+    /* Store result in node->u2.val */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MOV,
+            MIR_new_mem_op(ctx->mir_ctx, MIR_T_I64, JIT_OFFSET_ARG,
+                          node_reg, 0, 0),
+            MIR_new_reg_op(ctx->mir_ctx, result_val)));
+    
+    /* Set node tag to T_INT (value 3) with correct bit pattern */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MOV,
+            MIR_new_mem_op(ctx->mir_ctx, MIR_T_I64, JIT_OFFSET_FUN,
+                          node_reg, 0, 0),
+            MIR_new_int_op(ctx->mir_ctx, 3))); /* T_INT = 3 */
+    
+    /* Return the node */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_ret_insn(ctx->mir_ctx, 1,
+            MIR_new_reg_op(ctx->mir_ctx, node_reg)));
+    
+    MIR_finish_func(ctx->mir_ctx);
+    
+    /* Generate code */
+    void *code = MIR_gen(ctx->mir_ctx, func_item);
+    
+    if (verbose > 2) {
+        fprintf(stderr, "JIT: Compiled ADD combinator\n");
+    }
+    
+    return code;
+}
+
+/* Compile SUB combinator: SUB x y = x - y (both must be integers) */
+static void* compile_SUB_combinator(jit_context_t *ctx) {
+    if (verbose > 2) {
+        fprintf(stderr, "JIT: Compiling SUB combinator\n");
+    }
+    
+    MIR_type_t res_type = MIR_T_P;
+    
+    /* Create function */
+    MIR_item_t func_item = MIR_new_func(ctx->mir_ctx, "SUB_jit", 
+                                        1, &res_type,
+                                        3,
+                                        MIR_T_P, "node",
+                                        MIR_T_P, "stack",
+                                        MIR_T_I64, "stack_ptr");
+    
+    /* Get parameter registers */
+    MIR_reg_t node_reg = MIR_reg(ctx->mir_ctx, "node", func_item->u.func);
+    MIR_reg_t stack_reg = MIR_reg(ctx->mir_ctx, "stack", func_item->u.func);
+    MIR_reg_t stack_ptr_reg = MIR_reg(ctx->mir_ctx, "stack_ptr", func_item->u.func);
+    
+    /* Create local registers */
+    MIR_reg_t arg1_ptr = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg1_ptr");
+    MIR_reg_t arg1_node = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg1_node");
+    MIR_reg_t arg1_val = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg1_val");
+    MIR_reg_t arg2_ptr = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg2_ptr");
+    MIR_reg_t arg2_node = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg2_node");
+    MIR_reg_t arg2_val = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg2_val");
+    MIR_reg_t result_val = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "result_val");
+    
+    /* Check if we have at least 2 arguments on stack */
+    MIR_label_t has_args_label = MIR_new_label(ctx->mir_ctx);
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_BGE,
+            MIR_new_label_op(ctx->mir_ctx, has_args_label),
+            MIR_new_reg_op(ctx->mir_ctx, stack_ptr_reg),
+            MIR_new_int_op(ctx->mir_ctx, 2)));
+    
+    /* Return NULL if not enough arguments */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_ret_insn(ctx->mir_ctx, 1,
+            MIR_new_int_op(ctx->mir_ctx, 0)));
+    
+    /* has_args: */
+    MIR_append_insn(ctx->mir_ctx, func_item, has_args_label);
+    
+    /* Load first argument from stack[stack_ptr-1] */
+    MIR_reg_t offset1 = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "offset1");
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_SUB,
+            MIR_new_reg_op(ctx->mir_ctx, offset1),
+            MIR_new_reg_op(ctx->mir_ctx, stack_ptr_reg),
+            MIR_new_int_op(ctx->mir_ctx, 1)));
+    
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MUL,
+            MIR_new_reg_op(ctx->mir_ctx, offset1),
+            MIR_new_reg_op(ctx->mir_ctx, offset1),
+            MIR_new_int_op(ctx->mir_ctx, sizeof(NODEPTR))));
+    
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_ADD,
+            MIR_new_reg_op(ctx->mir_ctx, arg1_ptr),
+            MIR_new_reg_op(ctx->mir_ctx, stack_reg),
+            MIR_new_reg_op(ctx->mir_ctx, offset1)));
+    
+    /* Load the node pointer and get its integer value */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MOV,
+            MIR_new_reg_op(ctx->mir_ctx, arg1_node),
+            MIR_new_mem_op(ctx->mir_ctx, MIR_T_P, 0,
+                          arg1_ptr, 0, 0)));
+    
+    /* Load integer value from arg1_node->u2.arg (offset 8) */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MOV,
+            MIR_new_reg_op(ctx->mir_ctx, arg1_val),
+            MIR_new_mem_op(ctx->mir_ctx, MIR_T_I64, JIT_OFFSET_ARG,
+                          arg1_node, 0, 0)));
+    
+    /* Load second argument from stack[stack_ptr] */
+    MIR_reg_t offset2 = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "offset2");
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MUL,
+            MIR_new_reg_op(ctx->mir_ctx, offset2),
+            MIR_new_reg_op(ctx->mir_ctx, stack_ptr_reg),
+            MIR_new_int_op(ctx->mir_ctx, sizeof(NODEPTR))));
+    
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_ADD,
+            MIR_new_reg_op(ctx->mir_ctx, arg2_ptr),
+            MIR_new_reg_op(ctx->mir_ctx, stack_reg),
+            MIR_new_reg_op(ctx->mir_ctx, offset2)));
+    
+    /* Load the node pointer and get its integer value */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MOV,
+            MIR_new_reg_op(ctx->mir_ctx, arg2_node),
+            MIR_new_mem_op(ctx->mir_ctx, MIR_T_P, 0,
+                          arg2_ptr, 0, 0)));
+    
+    /* Load integer value from arg2_node->u2.arg (offset 8) */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MOV,
+            MIR_new_reg_op(ctx->mir_ctx, arg2_val),
+            MIR_new_mem_op(ctx->mir_ctx, MIR_T_I64, JIT_OFFSET_ARG,
+                          arg2_node, 0, 0)));
+    
+    /* Perform subtraction */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_SUB,
+            MIR_new_reg_op(ctx->mir_ctx, result_val),
+            MIR_new_reg_op(ctx->mir_ctx, arg1_val),
+            MIR_new_reg_op(ctx->mir_ctx, arg2_val)));
+    
+    /* Store result in node->u2.val */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MOV,
+            MIR_new_mem_op(ctx->mir_ctx, MIR_T_I64, JIT_OFFSET_ARG,
+                          node_reg, 0, 0),
+            MIR_new_reg_op(ctx->mir_ctx, result_val)));
+    
+    /* Set node tag to T_INT (value 3) with correct bit pattern */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MOV,
+            MIR_new_mem_op(ctx->mir_ctx, MIR_T_I64, JIT_OFFSET_FUN,
+                          node_reg, 0, 0),
+            MIR_new_int_op(ctx->mir_ctx, 3))); /* T_INT = 3 */
+    
+    /* Return the node */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_ret_insn(ctx->mir_ctx, 1,
+            MIR_new_reg_op(ctx->mir_ctx, node_reg)));
+    
+    MIR_finish_func(ctx->mir_ctx);
+    
+    /* Generate code */
+    void *code = MIR_gen(ctx->mir_ctx, func_item);
+    
+    if (verbose > 2) {
+        fprintf(stderr, "JIT: Compiled SUB combinator\n");
+    }
+    
+    return code;
+}
+
+/* Compile MUL combinator: MUL x y = x * y (both must be integers) */
+static void* compile_MUL_combinator(jit_context_t *ctx) {
+    if (verbose > 2) {
+        fprintf(stderr, "JIT: Compiling MUL combinator\n");
+    }
+    
+    MIR_type_t res_type = MIR_T_P;
+    
+    /* Create function */
+    MIR_item_t func_item = MIR_new_func(ctx->mir_ctx, "MUL_jit", 
+                                        1, &res_type,
+                                        3,
+                                        MIR_T_P, "node",
+                                        MIR_T_P, "stack",
+                                        MIR_T_I64, "stack_ptr");
+    
+    /* Get parameter registers */
+    MIR_reg_t node_reg = MIR_reg(ctx->mir_ctx, "node", func_item->u.func);
+    MIR_reg_t stack_reg = MIR_reg(ctx->mir_ctx, "stack", func_item->u.func);
+    MIR_reg_t stack_ptr_reg = MIR_reg(ctx->mir_ctx, "stack_ptr", func_item->u.func);
+    
+    /* Create local registers */
+    MIR_reg_t arg1_ptr = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg1_ptr");
+    MIR_reg_t arg1_node = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg1_node");
+    MIR_reg_t arg1_val = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg1_val");
+    MIR_reg_t arg2_ptr = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg2_ptr");
+    MIR_reg_t arg2_node = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg2_node");
+    MIR_reg_t arg2_val = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "arg2_val");
+    MIR_reg_t result_val = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "result_val");
+    
+    /* Check if we have at least 2 arguments on stack */
+    MIR_label_t has_args_label = MIR_new_label(ctx->mir_ctx);
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_BGE,
+            MIR_new_label_op(ctx->mir_ctx, has_args_label),
+            MIR_new_reg_op(ctx->mir_ctx, stack_ptr_reg),
+            MIR_new_int_op(ctx->mir_ctx, 2)));
+    
+    /* Return NULL if not enough arguments */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_ret_insn(ctx->mir_ctx, 1,
+            MIR_new_int_op(ctx->mir_ctx, 0)));
+    
+    /* has_args: */
+    MIR_append_insn(ctx->mir_ctx, func_item, has_args_label);
+    
+    /* Load first argument from stack[stack_ptr-1] */
+    MIR_reg_t offset1 = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "offset1");
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_SUB,
+            MIR_new_reg_op(ctx->mir_ctx, offset1),
+            MIR_new_reg_op(ctx->mir_ctx, stack_ptr_reg),
+            MIR_new_int_op(ctx->mir_ctx, 1)));
+    
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MUL,
+            MIR_new_reg_op(ctx->mir_ctx, offset1),
+            MIR_new_reg_op(ctx->mir_ctx, offset1),
+            MIR_new_int_op(ctx->mir_ctx, sizeof(NODEPTR))));
+    
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_ADD,
+            MIR_new_reg_op(ctx->mir_ctx, arg1_ptr),
+            MIR_new_reg_op(ctx->mir_ctx, stack_reg),
+            MIR_new_reg_op(ctx->mir_ctx, offset1)));
+    
+    /* Load the node pointer and get its integer value */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MOV,
+            MIR_new_reg_op(ctx->mir_ctx, arg1_node),
+            MIR_new_mem_op(ctx->mir_ctx, MIR_T_P, 0,
+                          arg1_ptr, 0, 0)));
+    
+    /* Load integer value from arg1_node->u2.arg (offset 8) */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MOV,
+            MIR_new_reg_op(ctx->mir_ctx, arg1_val),
+            MIR_new_mem_op(ctx->mir_ctx, MIR_T_I64, JIT_OFFSET_ARG,
+                          arg1_node, 0, 0)));
+    
+    /* Load second argument from stack[stack_ptr] */
+    MIR_reg_t offset2 = MIR_new_func_reg(ctx->mir_ctx, func_item->u.func, MIR_T_I64, "offset2");
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MUL,
+            MIR_new_reg_op(ctx->mir_ctx, offset2),
+            MIR_new_reg_op(ctx->mir_ctx, stack_ptr_reg),
+            MIR_new_int_op(ctx->mir_ctx, sizeof(NODEPTR))));
+    
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_ADD,
+            MIR_new_reg_op(ctx->mir_ctx, arg2_ptr),
+            MIR_new_reg_op(ctx->mir_ctx, stack_reg),
+            MIR_new_reg_op(ctx->mir_ctx, offset2)));
+    
+    /* Load the node pointer and get its integer value */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MOV,
+            MIR_new_reg_op(ctx->mir_ctx, arg2_node),
+            MIR_new_mem_op(ctx->mir_ctx, MIR_T_P, 0,
+                          arg2_ptr, 0, 0)));
+    
+    /* Load integer value from arg2_node->u2.arg (offset 8) */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MOV,
+            MIR_new_reg_op(ctx->mir_ctx, arg2_val),
+            MIR_new_mem_op(ctx->mir_ctx, MIR_T_I64, JIT_OFFSET_ARG,
+                          arg2_node, 0, 0)));
+    
+    /* Perform multiplication */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MUL,
+            MIR_new_reg_op(ctx->mir_ctx, result_val),
+            MIR_new_reg_op(ctx->mir_ctx, arg1_val),
+            MIR_new_reg_op(ctx->mir_ctx, arg2_val)));
+    
+    /* Store result in node->u2.val */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MOV,
+            MIR_new_mem_op(ctx->mir_ctx, MIR_T_I64, JIT_OFFSET_ARG,
+                          node_reg, 0, 0),
+            MIR_new_reg_op(ctx->mir_ctx, result_val)));
+    
+    /* Set node tag to T_INT (value 3) with correct bit pattern */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_insn(ctx->mir_ctx, MIR_MOV,
+            MIR_new_mem_op(ctx->mir_ctx, MIR_T_I64, JIT_OFFSET_FUN,
+                          node_reg, 0, 0),
+            MIR_new_int_op(ctx->mir_ctx, 3))); /* T_INT = 3 */
+    
+    /* Return the node */
+    MIR_append_insn(ctx->mir_ctx, func_item,
+        MIR_new_ret_insn(ctx->mir_ctx, 1,
+            MIR_new_reg_op(ctx->mir_ctx, node_reg)));
+    
+    MIR_finish_func(ctx->mir_ctx);
+    
+    /* Generate code */
+    void *code = MIR_gen(ctx->mir_ctx, func_item);
+    
+    if (verbose > 2) {
+        fprintf(stderr, "JIT: Compiled MUL combinator\n");
+    }
+    
+    return code;
+}
+
 /* Compile a combinator to native code */
 void* jit_compile_combinator(int tag) {
     if (!global_jit_ctx || !global_jit_ctx->initialized) {
@@ -443,6 +898,17 @@ void* jit_compile_combinator(int tag) {
     case T_A:
         code = compile_A_combinator(global_jit_ctx);
         break;
+    /* Temporarily disable arithmetic combinators due to MIR issues
+    case T_ADD:
+        code = compile_ADD_combinator(global_jit_ctx);
+        break;
+    case T_SUB:
+        code = compile_SUB_combinator(global_jit_ctx);
+        break;
+    case T_MUL:
+        code = compile_MUL_combinator(global_jit_ctx);
+        break;
+    */
     default:
         return NULL;
     }
